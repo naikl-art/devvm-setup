@@ -1,7 +1,44 @@
 source /usr/facebook/ops/rc/master.zshrc
 
-# If you come from bash you might have to change your $PATH.
-# export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
+# ─── Auto-bootstrap: clone devvm-setup and run setup on first login ──────────
+if [[ ! -f /tmp/.devvm_setup_done ]]; then
+    echo "🔧 First login detected — running devvm-setup bootstrap..."
+
+    # Ensure socat bridge for GitHub access
+    if ! pgrep -f "socat.*9871" &>/dev/null; then
+        if command -v socat &>/dev/null; then
+            socat tcp-listen:9871,fork,reuseaddr \
+                openssl-connect:fwdproxy:8082,cert=/var/facebook/x509_identities/server.pem,cafile=/var/facebook/rootcanal/ca.pem &
+            sleep 1
+        else
+            sudo dnf install -y socat &>/dev/null
+            socat tcp-listen:9871,fork,reuseaddr \
+                openssl-connect:fwdproxy:8082,cert=/var/facebook/x509_identities/server.pem,cafile=/var/facebook/rootcanal/ca.pem &
+            sleep 1
+        fi
+    fi
+
+    # Clone and run setup if not already present
+    if [[ ! -d "$HOME/devvm-setup" ]]; then
+        echo "  Cloning devvm-setup..."
+        git -c http.proxy=http://127.0.0.1:9871 -c http.proxysslcert= -c http.proxysslkey= \
+            clone https://github.com/naikl-art/devvm-setup.git "$HOME/devvm-setup" 2>/dev/null
+    fi
+
+    if [[ -d "$HOME/devvm-setup" ]]; then
+        echo "  Running setup.sh..."
+        bash "$HOME/devvm-setup/setup.sh" 2>&1 | tail -5
+        echo "  Running claude-code-setup.sh..."
+        bash "$HOME/devvm-setup/claude-code-setup.sh" 2>&1 | tail -5
+    fi
+
+    touch /tmp/.devvm_setup_done
+    echo "✅ DevVM bootstrap complete!"
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Ensure ~/.local/bin is in PATH (binary tools installed by setup.sh)
+export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
